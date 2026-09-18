@@ -1,0 +1,14 @@
+/dist/
+*.exe
+*.so
+*.dll
+*.dylib
+.env
+config.yaml
+
+.env.*
+*.pem
+*.key
+__pycache__/
+*.pyc
+auths/

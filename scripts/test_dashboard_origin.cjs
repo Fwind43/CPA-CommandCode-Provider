@@ -1,0 +1,18 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const assert = require('node:assert/strict');
+const html = fs.readFileSync(path.join(__dirname, '../quota_dashboard.html'), 'utf8');
+const source = html.slice(html.indexOf('function safeOrigin(){'), html.indexOf('function restoreAccess()'));
+const location = {protocol:'http:',hostname:'example.invalid',origin:'http://example.invalid:9321'};
+const window = {parent:{location:{origin:location.origin,pathname:'/management.html'}}};
+const ctx = vm.createContext({location, window});
+vm.runInContext(source, ctx);
+assert.equal(ctx.safeOrigin(), true);
+window.parent.location.origin = 'http://other.invalid';
+assert.equal(ctx.safeOrigin(), false);
+window.parent = window;
+assert.equal(ctx.safeOrigin(), false);
+location.protocol = 'https:';
+assert.equal(ctx.safeOrigin(), true);
+console.log('dashboard origin regression: PASS');
