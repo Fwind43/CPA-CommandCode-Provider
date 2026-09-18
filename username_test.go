@@ -60,3 +60,45 @@ func TestDashboardUsernameAllowlist(t *testing.T) {
 		}
 	}
 }
+
+func TestDashboardEmailAndStorage(t *testing.T) {
+	dir := t.TempDir()
+	startQuotaTestServer(t, dir)
+	for i, field := range []string{"email", "userEmail", "user_email"} {
+		raw := map[string]any{"userName": "Alice", field: "alice@example.com", "apiKey": testKeyA}
+		auth := authDataFromCredential(raw, "commandcode-test.json")
+		var stored map[string]any
+		if err := json.Unmarshal(auth.StorageJSON, &stored); err != nil {
+			t.Fatal(err)
+		}
+		if stored["email"] != "alice@example.com" || auth.Metadata["email"] != "alice@example.com" {
+			t.Fatal("email not preserved")
+		}
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("commandcode-email-%d.json", i)), auth.StorageJSON, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	accounts := quotaAccounts()
+	if len(accounts) != 3 {
+		t.Fatalf("accounts=%d", len(accounts))
+	}
+	for _, a := range accounts {
+		if a.Username != "Alice" || a.Email != "alice@example.com" {
+			t.Fatalf("missing identity: %v", a)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "commandcode-no-email.json"), []byte(`{"userName":"Bob"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range quotaAccounts() {
+		if a.Username == "Bob" {
+			data, _ := json.Marshal(a)
+			if strings.Contains(string(data), `"email"`) {
+				t.Fatal("empty email should be omitted")
+			}
+		}
+	}
+	if !strings.Contains(quotaDashboardHTML, "if(a.email)root.append(node('div',a.email,'email'))") {
+		t.Fatal("email display missing")
+	}
+}

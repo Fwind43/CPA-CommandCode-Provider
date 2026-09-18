@@ -269,6 +269,10 @@ func authDataFromCredential(raw map[string]any, fileName string) pluginapi.AuthD
 		"keyName":         keyName,
 		"authenticatedAt": time.Now().UTC().Format(time.RFC3339),
 	}
+	if email := firstString(raw, "email", "userEmail", "user_email"); email != "" {
+		storage["email"] = email
+		metadata["email"] = email
+	}
 	storageJSON, _ := json.Marshal(storage)
 	id := userID
 	if id == "" {

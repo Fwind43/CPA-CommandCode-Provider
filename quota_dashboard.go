@@ -22,10 +22,11 @@ type quotaAccount struct {
 	ID       string `json:"id"`
 	Label    string `json:"label"`
 	Username string `json:"username,omitempty"`
+	Email    string `json:"email,omitempty"`
 	path     string
 }
 
-// Expose only the account display name; never serialize paths or credentials.
+// Expose only the account display name and email; never serialize paths or credentials.
 func quotaAccounts() []quotaAccount {
 	out := []quotaAccount{}
 	seen := map[string]bool{}
@@ -41,19 +42,20 @@ func quotaAccounts() []quotaAccount {
 			sum := sha256.Sum256([]byte(absolute))
 			id := fmt.Sprintf("%x", sum[:12])
 			label := fmt.Sprintf("Command Code %02d", len(out)+1)
-			username := ""
+			username, email := "", ""
 			if info, err := os.Stat(path); err == nil && info.Size() <= 1<<20 {
 				if data, err := os.ReadFile(path); err == nil {
 					var raw map[string]any
 					if json.Unmarshal(data, &raw) == nil {
-						username = firstString(raw, "userName", "username", "user_name", "email", "name")
+						username = firstString(raw, "userName", "username", "user_name", "name")
+						email = firstString(raw, "email", "userEmail", "user_email")
 					}
 				}
 			}
 			if username != "" {
 				label = username
 			}
-			out = append(out, quotaAccount{ID: id, Label: label, Username: username, path: path})
+			out = append(out, quotaAccount{ID: id, Label: label, Username: username, Email: email, path: path})
 		}
 	}
 	return out
