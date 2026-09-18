@@ -140,31 +140,41 @@ func commandCodeRegistration() registration {
 }
 
 func publicModelID(id string) string {
- _, short, found := strings.Cut(id, "/")
- if !found { return id }
- for _, other := range goPlanModelIDs {
-  _, candidate, hasPrefix := strings.Cut(other, "/")
-  if !hasPrefix { candidate = other }
-  if other != id && candidate == short { return id }
- }
- return short
+	_, short, found := strings.Cut(id, "/")
+	if !found {
+		return id
+	}
+	for _, other := range goPlanModelIDs {
+		_, candidate, hasPrefix := strings.Cut(other, "/")
+		if !hasPrefix {
+			candidate = other
+		}
+		if other != id && candidate == short {
+			return id
+		}
+	}
+	return short
 }
 
 func upstreamModelID(id string) string {
- for _, canonical := range goPlanModelIDs {
-  if id == canonical { return canonical }
- }
- for _, canonical := range goPlanModelIDs {
-  if id == publicModelID(canonical) { return canonical }
- }
- return id
+	for _, canonical := range goPlanModelIDs {
+		if id == canonical {
+			return canonical
+		}
+	}
+	for _, canonical := range goPlanModelIDs {
+		if id == publicModelID(canonical) {
+			return canonical
+		}
+	}
+	return id
 }
 
 func commandCodeModels() []pluginapi.ModelInfo {
 	now := time.Now().Unix()
 	models := make([]pluginapi.ModelInfo, 0, len(goPlanModelIDs))
 	for _, id := range goPlanModelIDs {
-        id = publicModelID(id)
+		id = publicModelID(id)
 		models = append(models, pluginapi.ModelInfo{
 			ID:                  id,
 			Object:              "model",
@@ -229,7 +239,7 @@ func parseCommandCodeAuth(req pluginapi.AuthParseRequest) pluginapi.AuthParseRes
 func authDataFromCredential(raw map[string]any, fileName string) pluginapi.AuthData {
 	apiKey := firstString(raw, "apiKey", "api_key", "key", "token")
 	userID := firstString(raw, "userId", "user_id", "id")
-	userName := firstString(raw, "userName", "user_name", "email", "name")
+	userName := firstString(raw, "userName", "username", "user_name", "email", "name")
 	keyName := firstString(raw, "keyName", "key_name")
 	label := userName
 	if label == "" {
@@ -247,6 +257,7 @@ func authDataFromCredential(raw map[string]any, fileName string) pluginapi.AuthD
 	}
 	if userName != "" {
 		metadata["user_name"] = userName
+		metadata["username"] = userName
 	}
 	if keyName != "" {
 		metadata["key_name"] = keyName
@@ -361,12 +372,25 @@ func pollCommandCodeLogin(req pluginapi.AuthLoginPollRequest) pluginapi.AuthLogi
 	if credential == nil {
 		return pluginapi.AuthLoginPollResponse{Status: pluginapi.AuthLoginStatus("pending")}
 	}
-	auth := authDataFromCredential(credential, "commandcode-"+safeID(firstString(credential, "userId", "keyName"))+".json")
+	auth := authDataFromCredential(credential, commandCodeFileName(credential))
 	return pluginapi.AuthLoginPollResponse{
 		Status:  pluginapi.AuthLoginStatus("success"),
 		Message: "Command Code login completed",
 		Auth:    auth,
 	}
+}
+
+func commandCodeFileName(raw map[string]any) string {
+	name := firstString(raw, "userName", "username", "user_name", "email", "name", "userId", "user_id", "keyName")
+	name = strings.Trim(safeID(name), ".- ")
+	if len(name) > 80 {
+		name = name[:80]
+	}
+	if name == "" {
+		name = "account"
+	}
+	identity := firstString(raw, "userId", "user_id", "apiKey", "api_key", "keyName")
+	return "commandcode-" + name + "-" + quotaKeyFingerprint(identity) + ".json"
 }
 
 func safeID(value string) string {
@@ -609,14 +633,19 @@ func produceCommandCodeStream(streamID string, req pluginapi.ExecutorRequest) {
 		return invokeHost(pluginabi.MethodHostStreamEmit, raw)
 	}
 
-	if isResponsesFormat(req.Format) { produceResponses(req, emit, closeStream); return }
+	if isResponsesFormat(req.Format) {
+		produceResponses(req, emit, closeStream)
+		return
+	}
 	apiKey := apiKeyFromStorage(req.StorageJSON)
 	payload, errPayload := normalizeChatRequest(req)
 	if errPayload != nil {
 		closeStream(errPayload.Error())
 		return
 	}
-	payload.onToolCall = func(call map[string]any) error { return emit(sseChunk(buildChunk(req.Model, map[string]any{"tool_calls": []map[string]any{call}}, nil))) }
+	payload.onToolCall = func(call map[string]any) error {
+		return emit(sseChunk(buildChunk(req.Model, map[string]any{"tool_calls": []map[string]any{call}}, nil)))
+	}
 	result, errUpstream := callUpstream(context.Background(), apiKey, req.Model, payload, func(text string) error {
 		return emit(sseChunk(buildChunk(req.Model, map[string]any{"content": text}, nil)))
 	})
@@ -667,9 +696,9 @@ func apiKeyFromStorage(storage []byte) string {
 }
 
 type chatRequestPayload struct {
- Tools []map[string]any `json:"tools"`
- ToolChoice any `json:"tool_choice"`
- onToolCall func(map[string]any) error
+	Tools      []map[string]any `json:"tools"`
+	ToolChoice any              `json:"tool_choice"`
+	onToolCall func(map[string]any) error
 
 	Model       string           `json:"model"`
 	Messages    []map[string]any `json:"messages"`
@@ -679,7 +708,9 @@ type chatRequestPayload struct {
 }
 
 func normalizeChatRequest(req pluginapi.ExecutorRequest) (chatRequestPayload, error) {
- if isResponsesFormat(req.Format) { return normalizeResponses(req) }
+	if isResponsesFormat(req.Format) {
+		return normalizeResponses(req)
+	}
 	var payload chatRequestPayload
 	if errUnmarshal := json.Unmarshal(req.Payload, &payload); errUnmarshal != nil {
 		return payload, fmt.Errorf("invalid chat-completions payload: %w", errUnmarshal)
@@ -703,7 +734,7 @@ func normalizeChatRequest(req pluginapi.ExecutorRequest) (chatRequestPayload, er
 }
 
 type upstreamResult struct {
- ToolCalls []map[string]any
+	ToolCalls []map[string]any
 
 	Text         string
 	Reasoning    string
@@ -712,49 +743,72 @@ type upstreamResult struct {
 }
 
 func callUpstream(ctx context.Context, apiKey, model string, payload chatRequestPayload, onDelta func(string) error) (upstreamResult, error) {
- model = upstreamModelID(model)
- upstreamMessages := make([]map[string]any, 0, len(payload.Messages))
- var systemInstructions []string
- toolNames := map[string]string{}
- for _, message := range payload.Messages {
-  role := firstString(message, "role")
-  if role == "" { role = "user" }
-  text := messageText(message)
-  if role == "system" || role == "developer" {
-   systemInstructions = append(systemInstructions, text); continue
-  }
-  parts := []map[string]any{}
-  if role == "tool" {
-   id := firstString(message, "tool_call_id")
-   name := toolNames[id]
-   if name == "" { return upstreamResult{}, fmt.Errorf("tool result has no matching tool call: %s", id) }
-   parts = append(parts, map[string]any{"type":"tool-result", "toolCallId":id, "toolName":name, "output":map[string]any{"type":"text", "value":text}})
-  } else {
-   // Tool calls are structured content, never a text fallback.
-   if message["content"] != nil && text != "" { parts = append(parts, map[string]any{"type":"text", "text":text}) }
-   if calls, ok := message["tool_calls"].([]any); ok {
-    for _, raw := range calls {
-     call, ok := raw.(map[string]any); if !ok { return upstreamResult{}, fmt.Errorf("invalid tool call") }
-     fn, ok := call["function"].(map[string]any); if !ok { return upstreamResult{}, fmt.Errorf("invalid tool function") }
-     id, name := firstString(call,"id"), firstString(fn,"name")
-     var input any
-     if err := json.Unmarshal([]byte(rawString(fn,"arguments")), &input); err != nil { return upstreamResult{}, fmt.Errorf("invalid arguments for %s: %w",name,err) }
-     toolNames[id] = name
-     parts = append(parts,map[string]any{"type":"tool-call","toolCallId":id,"toolName":name,"input":input})
-    }
-   }
-  }
-  if len(parts)>0 { upstreamMessages = append(upstreamMessages,map[string]any{"role":role,"content":parts}) }
- }
- tools := []map[string]any{}
- for _, tool := range payload.Tools {
-  fn, ok := tool["function"].(map[string]any)
-  if !ok || firstString(tool,"type") != "function" { return upstreamResult{},fmt.Errorf("unsupported tool type") }
-  schema := fn["parameters"]
-  if schema == nil { schema = map[string]any{"type":"object","properties":map[string]any{}} }
-  tools = append(tools,map[string]any{"name":fn["name"],"description":fn["description"],"input_schema":schema})
- }
- if payload.ToolChoice == "none" { tools = []map[string]any{} }
+	model = upstreamModelID(model)
+	upstreamMessages := make([]map[string]any, 0, len(payload.Messages))
+	var systemInstructions []string
+	toolNames := map[string]string{}
+	for _, message := range payload.Messages {
+		role := firstString(message, "role")
+		if role == "" {
+			role = "user"
+		}
+		text := messageText(message)
+		if role == "system" || role == "developer" {
+			systemInstructions = append(systemInstructions, text)
+			continue
+		}
+		parts := []map[string]any{}
+		if role == "tool" {
+			id := firstString(message, "tool_call_id")
+			name := toolNames[id]
+			if name == "" {
+				return upstreamResult{}, fmt.Errorf("tool result has no matching tool call: %s", id)
+			}
+			parts = append(parts, map[string]any{"type": "tool-result", "toolCallId": id, "toolName": name, "output": map[string]any{"type": "text", "value": text}})
+		} else {
+			// Tool calls are structured content, never a text fallback.
+			if message["content"] != nil && text != "" {
+				parts = append(parts, map[string]any{"type": "text", "text": text})
+			}
+			if calls, ok := message["tool_calls"].([]any); ok {
+				for _, raw := range calls {
+					call, ok := raw.(map[string]any)
+					if !ok {
+						return upstreamResult{}, fmt.Errorf("invalid tool call")
+					}
+					fn, ok := call["function"].(map[string]any)
+					if !ok {
+						return upstreamResult{}, fmt.Errorf("invalid tool function")
+					}
+					id, name := firstString(call, "id"), firstString(fn, "name")
+					var input any
+					if err := json.Unmarshal([]byte(rawString(fn, "arguments")), &input); err != nil {
+						return upstreamResult{}, fmt.Errorf("invalid arguments for %s: %w", name, err)
+					}
+					toolNames[id] = name
+					parts = append(parts, map[string]any{"type": "tool-call", "toolCallId": id, "toolName": name, "input": input})
+				}
+			}
+		}
+		if len(parts) > 0 {
+			upstreamMessages = append(upstreamMessages, map[string]any{"role": role, "content": parts})
+		}
+	}
+	tools := []map[string]any{}
+	for _, tool := range payload.Tools {
+		fn, ok := tool["function"].(map[string]any)
+		if !ok || firstString(tool, "type") != "function" {
+			return upstreamResult{}, fmt.Errorf("unsupported tool type")
+		}
+		schema := fn["parameters"]
+		if schema == nil {
+			schema = map[string]any{"type": "object", "properties": map[string]any{}}
+		}
+		tools = append(tools, map[string]any{"name": fn["name"], "description": fn["description"], "input_schema": schema})
+	}
+	if payload.ToolChoice == "none" {
+		tools = []map[string]any{}
+	}
 	if len(upstreamMessages) == 0 {
 		return upstreamResult{}, fmt.Errorf("no text content in chat messages")
 	}
@@ -845,19 +899,38 @@ func callUpstream(ctx context.Context, apiKey, model string, payload chatRequest
 					return result, errDelta
 				}
 			}
-  case "tool-call":
-   if executed, _ := event["providerExecuted"].(bool); executed { continue }
-   input, ok := event["input"]; if !ok { input = event["args"] }
-   arguments := ""
-   if value, ok := input.(string); ok { arguments = value } else { encoded, err := json.Marshal(input); if err != nil { return result, err }; arguments = string(encoded) }
-   if !json.Valid([]byte(arguments)) { return result, fmt.Errorf("invalid upstream tool arguments") }
-   call := map[string]any{"id":firstString(event,"toolCallId"),"type":"function","function":map[string]any{"name":firstString(event,"toolName"),"arguments":arguments}}
-   if call["id"] == "" { return result, fmt.Errorf("missing upstream tool call id") }
-   result.ToolCalls = append(result.ToolCalls,call)
-   if payload.onToolCall != nil {
-    delta := map[string]any{"index":len(result.ToolCalls)-1,"id":call["id"],"type":"function","function":call["function"]}
-    if err := payload.onToolCall(delta); err != nil { return result,err }
-   }
+		case "tool-call":
+			if executed, _ := event["providerExecuted"].(bool); executed {
+				continue
+			}
+			input, ok := event["input"]
+			if !ok {
+				input = event["args"]
+			}
+			arguments := ""
+			if value, ok := input.(string); ok {
+				arguments = value
+			} else {
+				encoded, err := json.Marshal(input)
+				if err != nil {
+					return result, err
+				}
+				arguments = string(encoded)
+			}
+			if !json.Valid([]byte(arguments)) {
+				return result, fmt.Errorf("invalid upstream tool arguments")
+			}
+			call := map[string]any{"id": firstString(event, "toolCallId"), "type": "function", "function": map[string]any{"name": firstString(event, "toolName"), "arguments": arguments}}
+			if call["id"] == "" {
+				return result, fmt.Errorf("missing upstream tool call id")
+			}
+			result.ToolCalls = append(result.ToolCalls, call)
+			if payload.onToolCall != nil {
+				delta := map[string]any{"index": len(result.ToolCalls) - 1, "id": call["id"], "type": "function", "function": call["function"]}
+				if err := payload.onToolCall(delta); err != nil {
+					return result, err
+				}
+			}
 		case "finish":
 			if value := firstString(event, "finishReason", "finish_reason"); value != "" {
 				result.FinishReason = mapFinishReason(value)
@@ -881,7 +954,9 @@ func callUpstream(ctx context.Context, apiKey, model string, payload chatRequest
 	if strings.TrimSpace(result.Text) == "" && result.Reasoning != "" {
 		result.Text = result.Reasoning
 	}
-	if len(result.ToolCalls)>0 { result.FinishReason = "tool_calls" }
+	if len(result.ToolCalls) > 0 {
+		result.FinishReason = "tool_calls"
+	}
 	return result, nil
 }
 
@@ -939,7 +1014,12 @@ func completionID() string {
 
 func buildChatCompletion(model string, result upstreamResult) []byte {
 	message := map[string]any{"role": "assistant", "content": result.Text}
- if len(result.ToolCalls)>0 { message["tool_calls"] = result.ToolCalls; if result.Text == "" { message["content"] = nil } }
+	if len(result.ToolCalls) > 0 {
+		message["tool_calls"] = result.ToolCalls
+		if result.Text == "" {
+			message["content"] = nil
+		}
+	}
 	if result.Reasoning != "" {
 		message["reasoning_content"] = result.Reasoning
 	}

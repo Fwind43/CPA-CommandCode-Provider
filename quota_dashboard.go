@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -18,12 +19,13 @@ import (
 var quotaDashboardHTML string
 
 type quotaAccount struct {
-	ID    string `json:"id"`
-	Label string `json:"label"`
-	path  string
+	ID       string `json:"id"`
+	Label    string `json:"label"`
+	Username string `json:"username,omitempty"`
+	path     string
 }
 
-// Enumerate filenames only; never serialize paths, credentials or raw upstream errors.
+// Expose only the account display name; never serialize paths or credentials.
 func quotaAccounts() []quotaAccount {
 	out := []quotaAccount{}
 	seen := map[string]bool{}
@@ -38,7 +40,20 @@ func quotaAccounts() []quotaAccount {
 			seen[absolute] = true
 			sum := sha256.Sum256([]byte(absolute))
 			id := fmt.Sprintf("%x", sum[:12])
-			out = append(out, quotaAccount{ID: id, Label: fmt.Sprintf("Command Code %02d", len(out)+1), path: path})
+			label := fmt.Sprintf("Command Code %02d", len(out)+1)
+			username := ""
+			if info, err := os.Stat(path); err == nil && info.Size() <= 1<<20 {
+				if data, err := os.ReadFile(path); err == nil {
+					var raw map[string]any
+					if json.Unmarshal(data, &raw) == nil {
+						username = firstString(raw, "userName", "username", "user_name", "email", "name")
+					}
+				}
+			}
+			if username != "" {
+				label = username
+			}
+			out = append(out, quotaAccount{ID: id, Label: label, Username: username, path: path})
 		}
 	}
 	return out
