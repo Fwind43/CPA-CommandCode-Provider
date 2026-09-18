@@ -4,7 +4,7 @@ Command Code provider plugin for CLIProxyAPI.
 
 ## Features
 
-- Incremental streaming chat completions.
+- Incremental streaming chat completions and stateless OpenAI Responses.
 - System/developer instructions translated to the upstream system field.
 - Tool definitions, streamed tool calls, and tool-result round trips.
 - Provider-free model IDs with upstream ID resolution and collision protection.
@@ -55,3 +55,18 @@ Use a trusted endpoint of this same CPA instance, without `/v0/management/config
 not followed. Browser-supplied Host/Origin headers cannot change this destination.
 Docker published ports need no change if CPA still listens internally on 8317.
 Rebuild and replace the plugin to apply these fixes; existing binaries are unchanged.
+
+## Responses API
+
+The executor accepts and emits `responses` in addition to `chat-completions`.
+Supported: text input, instructions, explicit message history, function tools,
+function-call output round trips, non-streaming responses, incremental text
+streaming, function argument events, and token/cache usage.
+Tool argument events are emitted when the upstream completes each tool call.
+
+This is a stateless subset, not a hosted Responses storage service. Supply full
+history in `input`. `previous_response_id`, `conversation`, background execution,
+image/audio/file input and hosted tools are unsupported. Stored response retrieval
+and deletion are not implemented. Reasoning output and structured-output options
+are not mapped. Host routing and SSE framing depend on the installed CPA version.
+Build and replace the plugin to activate the new format declarations.

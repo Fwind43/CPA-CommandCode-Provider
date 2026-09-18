@@ -131,8 +131,8 @@ func commandCodeRegistration() registration {
 			AuthProvider:          true,
 			Executor:              true,
 			ExecutorModelScope:    pluginapi.ExecutorModelScope("static"),
-			ExecutorInputFormats:  []string{"chat-completions"},
-			ExecutorOutputFormats: []string{"chat-completions"},
+			ExecutorInputFormats:  []string{"chat-completions", "responses"},
+			ExecutorOutputFormats: []string{"chat-completions", "responses"},
 			ManagementAPI:         true,
 			QuotaProvider:         true,
 		},
@@ -581,7 +581,7 @@ func executeCommandCode(req pluginapi.ExecutorRequest) pluginapi.ExecutorRespons
 		return errorExecutorResponse(errUpstream.Error())
 	}
 	return pluginapi.ExecutorResponse{
-		Payload: buildChatCompletion(req.Model, result),
+		Payload: buildExecutorCompletion(req, result),
 		Headers: http.Header{"Content-Type": []string{"application/json; charset=utf-8"}},
 	}
 }
@@ -609,6 +609,7 @@ func produceCommandCodeStream(streamID string, req pluginapi.ExecutorRequest) {
 		return invokeHost(pluginabi.MethodHostStreamEmit, raw)
 	}
 
+	if req.Format == "responses" { produceResponses(req, emit, closeStream); return }
 	apiKey := apiKeyFromStorage(req.StorageJSON)
 	payload, errPayload := normalizeChatRequest(req)
 	if errPayload != nil {
@@ -678,6 +679,7 @@ type chatRequestPayload struct {
 }
 
 func normalizeChatRequest(req pluginapi.ExecutorRequest) (chatRequestPayload, error) {
+ if req.Format == "responses" { return normalizeResponses(req) }
 	var payload chatRequestPayload
 	if errUnmarshal := json.Unmarshal(req.Payload, &payload); errUnmarshal != nil {
 		return payload, fmt.Errorf("invalid chat-completions payload: %w", errUnmarshal)
