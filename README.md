@@ -70,3 +70,14 @@ image/audio/file input and hosted tools are unsupported. Stored response retriev
 and deletion are not implemented. Reasoning output and structured-output options
 are not mapped. Host routing and SSE framing depend on the installed CPA version.
 Build and replace the plugin to activate the new format declarations.
+
+## Automated builds
+
+GitHub Actions builds Linux amd64 and arm64 shared libraries on pushes to main,
+version tags, pull requests and manual dispatch. Each architecture runs tests
+before packaging. Download `commandcode-linux-amd64` or `commandcode-linux-arm64`
+from the successful Actions run's Artifacts section (retained for 30 days).
+Packages include commandcode.so, its C header, documentation, callback scripts,
+commit/build metadata and a SHA-256 checksum. Builds use Go 1.26 with Debian
+Bookworm/glibc; they are not native Alpine/musl binaries. No automatic deployment
+or GitHub Release publication is performed.

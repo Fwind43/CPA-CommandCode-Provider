@@ -1,0 +1,56 @@
+name: Build plugin
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    container: golang:1.26-bookworm
+    env:
+      CGO_ENABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: go test -count=1 ./...
+      - name: Test helpers
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends python3 nodejs
+          python3 -m unittest discover -s scripts -p 'test_*.py'
+          node scripts/test_dashboard_origin.cjs
+      - name: Build and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/package
+          go build -trimpath -buildmode=c-shared -o dist/package/commandcode.so .
+          cp README.md dist/package/
+          cp -r scripts dist/package/
+          find dist/package -type d -name __pycache__ -exec rm -rf {} +
+          printf 'commit=%s\nplatform=linux/${{ matrix.arch }}\n' "$GITHUB_SHA" > dist/package/BUILD.txt
+          go version >> dist/package/BUILD.txt
+          cd dist
+          tar -czf commandcode-linux-${{ matrix.arch }}.tar.gz -C package .
+          sha256sum commandcode-linux-${{ matrix.arch }}.tar.gz > commandcode-linux-${{ matrix.arch }}.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: commandcode-linux-${{ matrix.arch }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 30
