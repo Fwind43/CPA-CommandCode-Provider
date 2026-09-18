@@ -131,8 +131,8 @@ func commandCodeRegistration() registration {
 			AuthProvider:          true,
 			Executor:              true,
 			ExecutorModelScope:    pluginapi.ExecutorModelScope("static"),
-			ExecutorInputFormats:  []string{"chat-completions", "responses"},
-			ExecutorOutputFormats: []string{"chat-completions", "responses"},
+			ExecutorInputFormats:  []string{"openai", "openai-response"},
+			ExecutorOutputFormats: []string{"openai", "openai-response"},
 			ManagementAPI:         true,
 			QuotaProvider:         true,
 		},
@@ -609,7 +609,7 @@ func produceCommandCodeStream(streamID string, req pluginapi.ExecutorRequest) {
 		return invokeHost(pluginabi.MethodHostStreamEmit, raw)
 	}
 
-	if req.Format == "responses" { produceResponses(req, emit, closeStream); return }
+	if isResponsesFormat(req.Format) { produceResponses(req, emit, closeStream); return }
 	apiKey := apiKeyFromStorage(req.StorageJSON)
 	payload, errPayload := normalizeChatRequest(req)
 	if errPayload != nil {
@@ -679,7 +679,7 @@ type chatRequestPayload struct {
 }
 
 func normalizeChatRequest(req pluginapi.ExecutorRequest) (chatRequestPayload, error) {
- if req.Format == "responses" { return normalizeResponses(req) }
+ if isResponsesFormat(req.Format) { return normalizeResponses(req) }
 	var payload chatRequestPayload
 	if errUnmarshal := json.Unmarshal(req.Payload, &payload); errUnmarshal != nil {
 		return payload, fmt.Errorf("invalid chat-completions payload: %w", errUnmarshal)

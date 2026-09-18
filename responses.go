@@ -8,6 +8,10 @@ import (
 	"time"
 )
 
+func isResponsesFormat(format string) bool {
+ return format == "openai-response" || format == "responses"
+}
+
 // Responses is stateless: callers must supply conversation history explicitly.
 func normalizeResponses(req pluginapi.ExecutorRequest) (chatRequestPayload, error) {
 	var r struct {
@@ -111,7 +115,7 @@ func responsesUsage(r upstreamResult) map[string]any {
 	return map[string]any{"input_tokens": u["prompt_tokens"], "output_tokens": u["completion_tokens"], "total_tokens": u["total_tokens"], "input_tokens_details": u["prompt_tokens_details"], "output_tokens_details": map[string]any{"reasoning_tokens": 0}}
 }
 func buildExecutorCompletion(req pluginapi.ExecutorRequest, r upstreamResult) []byte {
-	if req.Format != "responses" {
+	if !isResponsesFormat(req.Format) {
 		return buildChatCompletion(req.Model, r)
 	}
 	out := []any{}

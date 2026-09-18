@@ -58,7 +58,8 @@ Rebuild and replace the plugin to apply these fixes; existing binaries are uncha
 
 ## Responses API
 
-The executor accepts and emits `responses` in addition to `chat-completions`.
+The executor declares canonical CPA formats `openai-response` (Responses) and
+`openai` (Chat Completions). The legacy `responses` input alias is also accepted.
 Supported: text input, instructions, explicit message history, function tools,
 function-call output round trips, non-streaming responses, incremental text
 streaming, function argument events, and token/cache usage.

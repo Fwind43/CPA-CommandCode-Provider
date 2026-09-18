@@ -10,7 +10,7 @@ import (
 )
 
 func TestResponsesNormalize(t *testing.T) {
-	req := pluginapi.ExecutorRequest{Format: "responses", Model: "test", Payload: []byte(`{"instructions":"be helpful","input":[{"role":"user","content":[{"type":"input_text","text":"hi"}]},{"type":"function_call","call_id":"c1","name":"lookup","arguments":"{}"},{"type":"function_call_output","call_id":"c1","output":"ok"}],"tools":[{"type":"function","name":"lookup","parameters":{"type":"object"}}],"max_output_tokens":99}`)}
+	req := pluginapi.ExecutorRequest{Format: "openai-response", Model: "test", Payload: []byte(`{"instructions":"be helpful","input":[{"role":"user","content":[{"type":"input_text","text":"hi"}]},{"type":"function_call","call_id":"c1","name":"lookup","arguments":"{}"},{"type":"function_call_output","call_id":"c1","output":"ok"}],"tools":[{"type":"function","name":"lookup","parameters":{"type":"object"}}],"max_output_tokens":99}`)}
 	p, err := normalizeChatRequest(req)
 	if err != nil {
 		t.Fatal(err)
@@ -41,7 +41,7 @@ data: {"type":"finish","finishReason":"tool-calls","usage":{"inputTokens":10,"ou
 	apiBaseURL = server.URL
 	configMu.Unlock()
 	defer func() { configMu.Lock(); apiBaseURL = prev; configMu.Unlock() }()
-	req := pluginapi.ExecutorRequest{Format: "responses", Model: "test", StorageJSON: []byte(`{"apiKey":"test"}`), Payload: []byte(`{"input":"hello","tools":[{"type":"function","name":"lookup","parameters":{"type":"object"}}]}`)}
+	req := pluginapi.ExecutorRequest{Format: "openai-response", Model: "test", StorageJSON: []byte(`{"apiKey":"test"}`), Payload: []byte(`{"input":"hello","tools":[{"type":"function","name":"lookup","parameters":{"type":"object"}}]}`)}
 	var body map[string]any
 	if err := json.Unmarshal(executeCommandCode(req).Payload, &body); err != nil {
 		t.Fatal(err)
@@ -96,7 +96,7 @@ data: {"type":"finish","finishReason":"tool-calls","usage":{"inputTokens":10,"ou
 }
 func TestResponsesIncompleteAndUsage(t *testing.T) {
 	var body map[string]any
-	json.Unmarshal(buildExecutorCompletion(pluginapi.ExecutorRequest{Format: "responses"}, upstreamResult{Text: "x", FinishReason: "length", Usage: map[string]any{"inputTokens": 10, "outputTokens": 2, "cacheReadTokens": 4}}), &body)
+	json.Unmarshal(buildExecutorCompletion(pluginapi.ExecutorRequest{Format: "openai-response"}, upstreamResult{Text: "x", FinishReason: "length", Usage: map[string]any{"inputTokens": 10, "outputTokens": 2, "cacheReadTokens": 4}}), &body)
 	if body["status"] != "incomplete" {
 		t.Fatal(body)
 	}
