@@ -143,7 +143,7 @@ func produceResponses(req pluginapi.ExecutorRequest, emit func([]byte) error, cl
 		fields["sequence_number"] = seq
 		seq++
 		raw, _ := json.Marshal(fields)
-		return emit(raw)
+		return emit([]byte("event: " + kind + "\ndata: " + string(raw) + "\n\n"))
 	}
 	run := func() error {
 		if apiKeyFromStorage(req.StorageJSON) == "" {

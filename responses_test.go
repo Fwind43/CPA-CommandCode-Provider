@@ -6,6 +6,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -55,7 +56,11 @@ data: {"type":"finish","finishReason":"tool-calls","usage":{"inputTokens":10,"ou
 	rid := ""
 	produceResponses(req, func(raw []byte) error {
 		var e map[string]any
-		if err := json.Unmarshal(raw, &e); err != nil {
+		parts := strings.SplitN(string(raw), "\ndata: ", 2)
+		if len(parts) != 2 || !strings.HasSuffix(parts[1], "\n\n") {
+			t.Fatalf("invalid SSE frame: %q", raw)
+		}
+		if err := json.Unmarshal([]byte(strings.TrimSuffix(parts[1], "\n\n")), &e); err != nil {
 			return err
 		}
 		if e["sequence_number"] != float64(seq) {
@@ -63,6 +68,9 @@ data: {"type":"finish","finishReason":"tool-calls","usage":{"inputTokens":10,"ou
 		}
 		seq++
 		kind := e["type"].(string)
+		if parts[0] != "event: "+kind {
+			t.Fatal("event type mismatch")
+		}
 		seen[kind]++
 		if response, ok := e["response"].(map[string]any); ok {
 			if rid == "" {
