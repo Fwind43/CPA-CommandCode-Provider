@@ -9,7 +9,7 @@ import (
 )
 
 func isResponsesFormat(format string) bool {
- return format == "openai-response" || format == "responses"
+	return format == "openai-response" || format == "responses"
 }
 
 // Responses is stateless: callers must supply conversation history explicitly.
@@ -45,7 +45,7 @@ func normalizeResponses(req pluginapi.ExecutorRequest) (chatRequestPayload, erro
 		for _, item := range items {
 			switch item["type"] {
 			case "function_call":
-				p.Messages = append(p.Messages, map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"id": item["call_id"], "type": "function", "function": map[string]any{"name": item["name"], "arguments": item["arguments"]}}}})
+				p.Messages = append(p.Messages, map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"id": item["call_id"], "type": "function", "function": map[string]any{"name": namespaceToolName(firstString(item, "namespace"), firstString(item, "name")), "arguments": item["arguments"]}}}})
 			case "function_call_output":
 				p.Messages = append(p.Messages, map[string]any{"role": "tool", "tool_call_id": item["call_id"], "content": item["output"]})
 			case nil, "message":
@@ -74,21 +74,14 @@ func normalizeResponses(req pluginapi.ExecutorRequest) (chatRequestPayload, erro
 			}
 		}
 	}
-	for _, tool := range r.Tools {
-		if tool["type"] != "function" {
-			return p, fmt.Errorf("only function tools are supported")
-		}
-		fn := map[string]any{}
-		for k, v := range tool {
-			if k != "type" {
-				fn[k] = v
-			}
-		}
-		p.Tools = append(p.Tools, map[string]any{"type": "function", "function": fn})
+	var toolsErr error
+	p.Tools, toolsErr = flattenResponseTools(r.Tools)
+	if toolsErr != nil {
+		return p, toolsErr
 	}
 	p.ToolChoice = r.ToolChoice
 	if choice, ok := r.ToolChoice.(map[string]any); ok && choice["type"] == "function" {
-		p.ToolChoice = map[string]any{"type": "function", "function": map[string]any{"name": choice["name"]}}
+		p.ToolChoice = map[string]any{"type": "function", "function": map[string]any{"name": namespaceToolName(firstString(choice, "namespace"), firstString(choice, "name"))}}
 	}
 	p.MaxTokens = r.MaxTokens
 	p.Model = req.Model
@@ -123,7 +116,7 @@ func buildExecutorCompletion(req pluginapi.ExecutorRequest, r upstreamResult) []
 		out = append(out, responseMessage("msg_"+randomState()[:24], r.Text, "completed"))
 	}
 	for _, c := range r.ToolCalls {
-		out = append(out, responseTool(c))
+		out = append(out, responseToolForRequest(req, c))
 	}
 	body := responseObject("resp_"+randomState()[:24], req.Model, "completed", out, responsesUsage(r))
 	markResponseLimit(body, r)
@@ -164,7 +157,7 @@ func produceResponses(req pluginapi.ExecutorRequest, emit func([]byte) error, cl
 		textIndex := -1
 		text := ""
 		p.onToolCall = func(c map[string]any) error {
-			item := responseTool(c)
+			item := responseToolForRequest(req, c)
 			idx := len(out)
 			out = append(out, item)
 			added := map[string]any{}
