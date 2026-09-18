@@ -80,5 +80,6 @@ before packaging. Download `commandcode-linux-amd64` or `commandcode-linux-arm64
 from the successful Actions run's Artifacts section (retained for 30 days).
 Packages include commandcode.so, its C header, documentation, callback scripts,
 commit/build metadata and a SHA-256 checksum. Builds use Go 1.26 with Debian
-Bookworm/glibc; they are not native Alpine/musl binaries. No automatic deployment
-or GitHub Release publication is performed.
+Bookworm/glibc; they are not native Alpine/musl binaries. Version tags (`v*`)
+automatically publish both architecture packages and SHA-256 checksums to GitHub
+Releases after all builds and tests pass. No automatic deployment is performed.

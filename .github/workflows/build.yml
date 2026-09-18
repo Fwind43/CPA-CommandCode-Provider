@@ -54,3 +54,27 @@ jobs:
             dist/*.sha256
           if-no-files-found: error
           retention-days: 30
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: linux
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: commandcode-linux-*
+          merge-multiple: true
+          path: dist
+      - name: Verify packages
+        working-directory: dist
+        run: |
+          sha256sum -c commandcode-linux-amd64.sha256
+          sha256sum -c commandcode-linux-arm64.sha256
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" dist/*.tar.gz dist/*.sha256 --verify-tag --title "$RELEASE_TAG" --generate-notes
