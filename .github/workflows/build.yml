@@ -37,7 +37,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist/package
-          go build -trimpath -buildmode=c-shared -o dist/package/commandcode.so .
+          go build -buildvcs=false -trimpath -buildmode=c-shared -o dist/package/commandcode.so .
           cp README.md dist/package/
           cp -r scripts dist/package/
           find dist/package -type d -name __pycache__ -exec rm -rf {} +
