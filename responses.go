@@ -49,9 +49,16 @@ func normalizeResponses(req pluginapi.ExecutorRequest) (chatRequestPayload, erro
 				if _, err := additionalResponseTools(item); err != nil {
 					return p, err
 				}
+			case "custom_tool_call":
+				input, ok := item["input"].(string)
+				if !ok {
+					return p, fmt.Errorf("custom_tool_call requires string input")
+				}
+				args, _ := json.Marshal(map[string]any{"input": input})
+				p.Messages = append(p.Messages, map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"id": item["call_id"], "type": "function", "function": map[string]any{"name": namespaceToolName(firstString(item, "namespace"), firstString(item, "name")), "arguments": string(args)}}}})
 			case "function_call":
 				p.Messages = append(p.Messages, map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"id": item["call_id"], "type": "function", "function": map[string]any{"name": namespaceToolName(firstString(item, "namespace"), firstString(item, "name")), "arguments": item["arguments"]}}}})
-			case "function_call_output":
+			case "function_call_output", "custom_tool_call_output":
 				p.Messages = append(p.Messages, map[string]any{"role": "tool", "tool_call_id": item["call_id"], "content": item["output"]})
 			case nil, "message":
 				content := item["content"]
@@ -88,7 +95,7 @@ func normalizeResponses(req pluginapi.ExecutorRequest) (chatRequestPayload, erro
 		return p, toolsErr
 	}
 	p.ToolChoice = r.ToolChoice
-	if choice, ok := r.ToolChoice.(map[string]any); ok && choice["type"] == "function" {
+	if choice, ok := r.ToolChoice.(map[string]any); ok && (choice["type"] == "function" || choice["type"] == "custom") {
 		p.ToolChoice = map[string]any{"type": "function", "function": map[string]any{"name": namespaceToolName(firstString(choice, "namespace"), firstString(choice, "name"))}}
 	}
 	p.MaxTokens = r.MaxTokens
@@ -172,17 +179,21 @@ func produceResponses(req pluginapi.ExecutorRequest, emit func([]byte) error, cl
 			for k, v := range item {
 				added[k] = v
 			}
-			added["arguments"] = ""
+			field, eventBase := "arguments", "response.function_call_arguments"
+			if item["type"] == "custom_tool_call" {
+				field, eventBase = "input", "response.custom_tool_call_input"
+			}
+			added[field] = ""
 			added["status"] = "in_progress"
 			if err := event("response.output_item.added", map[string]any{"output_index": idx, "item": added}); err != nil {
 				return err
 			}
-			for _, kind := range []string{"response.function_call_arguments.delta", "response.function_call_arguments.done"} {
+			for _, kind := range []string{eventBase + ".delta", eventBase + ".done"} {
 				f := map[string]any{"output_index": idx, "item_id": item["id"]}
-				if kind == "response.function_call_arguments.delta" {
-					f["delta"] = item["arguments"]
+				if kind == eventBase+".delta" {
+					f["delta"] = item[field]
 				} else {
-					f["arguments"] = item["arguments"]
+					f[field] = item[field]
 				}
 				if err := event(kind, f); err != nil {
 					return err

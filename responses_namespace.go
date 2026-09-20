@@ -17,13 +17,13 @@ func namespaceToolName(namespace, name string) string {
 	return "ns_" + hex.EncodeToString(sum[:28])
 }
 
-// Flatten only function namespaces. Never silently drop unsupported tool kinds.
+// Adapt function and custom tools to the function-only upstream protocol.
 func flattenResponseTools(tools []map[string]any) ([]map[string]any, error) {
 	out := []map[string]any{}
 	seen := map[string]bool{}
 	add := func(tool map[string]any, namespace, description string) error {
-		if tool["type"] != "function" {
-			return fmt.Errorf("only function tools are supported inside namespaces (got %v)", tool["type"])
+		if tool["type"] != "function" && tool["type"] != "custom" {
+			return fmt.Errorf("unsupported Responses tool type: %v", tool["type"])
 		}
 		name, _ := tool["name"].(string)
 		if name == "" {
@@ -39,6 +39,14 @@ func flattenResponseTools(tools []map[string]any) ([]map[string]any, error) {
 			if k != "type" {
 				fn[k] = v
 			}
+		}
+		if tool["type"] == "custom" {
+			d, _ := tool["description"].(string)
+			if format, ok := tool["format"]; ok {
+				raw, _ := json.Marshal(format)
+				d += "\nInput format specification (follow exactly): " + string(raw)
+			}
+			fn = map[string]any{"description": d + "\nPass the raw tool input verbatim in the input string.", "parameters": map[string]any{"type": "object", "properties": map[string]any{"input": map[string]any{"type": "string"}}, "required": []string{"input"}, "additionalProperties": false}}
 		}
 		fn["name"] = alias
 		if namespace != "" {
@@ -125,11 +133,12 @@ func responseToolForRequest(req pluginapi.ExecutorRequest, call map[string]any) 
 		return item
 	}
 	for _, tool := range tools {
-		if tool["type"] != "namespace" {
-			continue
+		ns := ""
+		children := []any{tool}
+		if tool["type"] == "namespace" {
+			ns, _ = tool["name"].(string)
+			children, _ = tool["tools"].([]any)
 		}
-		ns, _ := tool["name"].(string)
-		children, _ := tool["tools"].([]any)
 		for _, child := range children {
 			fn, ok := child.(map[string]any)
 			if !ok {
@@ -137,7 +146,21 @@ func responseToolForRequest(req pluginapi.ExecutorRequest, call map[string]any) 
 			}
 			name, _ := fn["name"].(string)
 			if item["name"] == namespaceToolName(ns, name) {
-				item["name"], item["namespace"] = name, ns
+				item["name"] = name
+				if ns != "" {
+					item["namespace"] = ns
+				}
+				if fn["type"] == "custom" {
+					args, _ := item["arguments"].(string)
+					var wrapped struct {
+						Input *string `json:"input"`
+					}
+					if json.Unmarshal([]byte(args), &wrapped) == nil && wrapped.Input != nil {
+						args = *wrapped.Input
+					}
+					item["type"], item["input"] = "custom_tool_call", args
+					delete(item, "arguments")
+				}
 				return item
 			}
 		}
