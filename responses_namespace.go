@@ -77,15 +77,54 @@ func flattenResponseTools(tools []map[string]any) ([]map[string]any, error) {
 	return out, nil
 }
 
-func responseToolForRequest(req pluginapi.ExecutorRequest, call map[string]any) map[string]any {
-	item := responseTool(call)
+func additionalResponseTools(item map[string]any) ([]map[string]any, error) {
+	values, ok := item["tools"].([]any)
+	if !ok {
+		return nil, fmt.Errorf("additional_tools requires a tools array")
+	}
+	tools := make([]map[string]any, 0, len(values))
+	for _, value := range values {
+		tool, ok := value.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("invalid additional_tools tool")
+		}
+		tools = append(tools, tool)
+	}
+	return tools, nil
+}
+
+// Use the same declarations for upstream conversion and output name restoration.
+func responseToolsForRequest(payload []byte) ([]map[string]any, error) {
 	var r struct {
 		Tools []map[string]any `json:"tools"`
+		Input json.RawMessage  `json:"input"`
 	}
-	if json.Unmarshal(req.Payload, &r) != nil {
+	if err := json.Unmarshal(payload, &r); err != nil {
+		return nil, err
+	}
+	var items []map[string]any
+	if json.Unmarshal(r.Input, &items) == nil {
+		for _, item := range items {
+			if item["type"] != "additional_tools" {
+				continue
+			}
+			tools, err := additionalResponseTools(item)
+			if err != nil {
+				return nil, err
+			}
+			r.Tools = append(r.Tools, tools...)
+		}
+	}
+	return r.Tools, nil
+}
+
+func responseToolForRequest(req pluginapi.ExecutorRequest, call map[string]any) map[string]any {
+	item := responseTool(call)
+	tools, err := responseToolsForRequest(req.Payload)
+	if err != nil {
 		return item
 	}
-	for _, tool := range r.Tools {
+	for _, tool := range tools {
 		if tool["type"] != "namespace" {
 			continue
 		}

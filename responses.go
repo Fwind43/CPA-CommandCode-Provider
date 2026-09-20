@@ -44,6 +44,11 @@ func normalizeResponses(req pluginapi.ExecutorRequest) (chatRequestPayload, erro
 		}
 		for _, item := range items {
 			switch item["type"] {
+			case "additional_tools":
+				// Tool declarations are metadata, not conversation messages.
+				if _, err := additionalResponseTools(item); err != nil {
+					return p, err
+				}
 			case "function_call":
 				p.Messages = append(p.Messages, map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"id": item["call_id"], "type": "function", "function": map[string]any{"name": namespaceToolName(firstString(item, "namespace"), firstString(item, "name")), "arguments": item["arguments"]}}}})
 			case "function_call_output":
@@ -74,8 +79,11 @@ func normalizeResponses(req pluginapi.ExecutorRequest) (chatRequestPayload, erro
 			}
 		}
 	}
-	var toolsErr error
-	p.Tools, toolsErr = flattenResponseTools(r.Tools)
+	tools, toolsErr := responseToolsForRequest(req.Payload)
+	if toolsErr != nil {
+		return p, toolsErr
+	}
+	p.Tools, toolsErr = flattenResponseTools(tools)
 	if toolsErr != nil {
 		return p, toolsErr
 	}
