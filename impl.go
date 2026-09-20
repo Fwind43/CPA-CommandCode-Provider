@@ -647,6 +647,38 @@ func produceCommandCodeStream(streamID string, req pluginapi.ExecutorRequest) {
 		closeStream(errPayload.Error())
 		return
 	}
+	completion, created := completionID(), time.Now().Unix()
+	var options struct {
+		StreamOptions struct {
+			IncludeUsage bool `json:"include_usage"`
+		} `json:"stream_options"`
+	}
+	_ = json.Unmarshal(req.Payload, &options)
+	originalEmit := emit
+	emit = func(data []byte) error {
+		var chunk map[string]any
+		if err := json.Unmarshal(data, &chunk); err != nil {
+			return err
+		}
+		chunk["id"], chunk["created"] = completion, created
+		if options.StreamOptions.IncludeUsage {
+			if _, ok := chunk["usage"]; !ok {
+				chunk["usage"] = nil
+			}
+		}
+		encoded, err := json.Marshal(chunk)
+		if err != nil {
+			return err
+		}
+		return originalEmit(encoded)
+	}
+	if err := emit(buildChunk(req.Model, map[string]any{"role": "assistant", "content": ""}, nil)); err != nil {
+		closeStream(err.Error())
+		return
+	}
+	payload.onReasoning = func(text string) error {
+		return emit(buildChunk(req.Model, map[string]any{"reasoning_content": text}, nil))
+	}
 	payload.onToolCall = func(call map[string]any) error {
 		return emit(sseChunk(buildChunk(req.Model, map[string]any{"tool_calls": []map[string]any{call}}, nil)))
 	}
@@ -666,7 +698,7 @@ func produceCommandCodeStream(streamID string, req pluginapi.ExecutorRequest) {
 		closeStream(err.Error())
 		return
 	}
-	if result.Usage != nil {
+	if options.StreamOptions.IncludeUsage {
 		if err := emit(sseChunk(buildUsageChunk(req.Model, result.Usage))); err != nil {
 			closeStream(err.Error())
 			return
@@ -700,15 +732,18 @@ func apiKeyFromStorage(storage []byte) string {
 }
 
 type chatRequestPayload struct {
-	Tools      []map[string]any `json:"tools"`
-	ToolChoice any              `json:"tool_choice"`
-	onToolCall func(map[string]any) error
+	Tools       []map[string]any `json:"tools"`
+	ToolChoice  any              `json:"tool_choice"`
+	onToolCall  func(map[string]any) error
+	onReasoning func(string) error
 
-	Model       string           `json:"model"`
-	Messages    []map[string]any `json:"messages"`
-	MaxTokens   int              `json:"max_tokens"`
-	MaxComplete int              `json:"max_completion_tokens"`
-	Stream      bool             `json:"stream"`
+	Model           string           `json:"model"`
+	Messages        []map[string]any `json:"messages"`
+	MaxTokens       int              `json:"max_tokens"`
+	MaxComplete     int              `json:"max_completion_tokens"`
+	Stream          bool             `json:"stream"`
+	Temperature     *float64         `json:"temperature"`
+	ReasoningEffort string           `json:"reasoning_effort"`
 }
 
 func normalizeChatRequest(req pluginapi.ExecutorRequest) (chatRequestPayload, error) {
@@ -730,9 +765,6 @@ func normalizeChatRequest(req pluginapi.ExecutorRequest) (chatRequestPayload, er
 	}
 	if payload.MaxTokens <= 0 {
 		payload.MaxTokens = 8192
-	}
-	if payload.MaxTokens > 32768 {
-		payload.MaxTokens = 32768
 	}
 	return payload, nil
 }
@@ -771,9 +803,11 @@ func callUpstream(ctx context.Context, apiKey, model string, payload chatRequest
 			parts = append(parts, map[string]any{"type": "tool-result", "toolCallId": id, "toolName": name, "output": map[string]any{"type": "text", "value": text}})
 		} else {
 			// Tool calls are structured content, never a text fallback.
-			if message["content"] != nil && text != "" {
-				parts = append(parts, map[string]any{"type": "text", "text": text})
+			contentParts, err := chatContentParts(message["content"])
+			if err != nil {
+				return upstreamResult{}, err
 			}
+			parts = append(parts, contentParts...)
 			if calls, ok := message["tool_calls"].([]any); ok {
 				for _, raw := range calls {
 					call, ok := raw.(map[string]any)
@@ -832,15 +866,22 @@ func callUpstream(ctx context.Context, apiKey, model string, payload chatRequest
 		"permissionMode": "standard",
 		"threadId":       randomUUID(),
 		"params": map[string]any{
-			"model":           model,
-			"canonicalID":     model,
-			"messages":        upstreamMessages,
-			"tools":           tools,
-			"maxOutputTokens": payload.MaxTokens,
+			"model":       model,
+			"canonicalID": model,
+			"messages":    upstreamMessages,
+			"tools":       tools,
+			"max_tokens":  payload.MaxTokens,
 		},
 	}
 	if len(systemInstructions) > 0 {
 		body["params"].(map[string]any)["system"] = strings.Join(systemInstructions, "\n\n")
+	}
+	params := body["params"].(map[string]any)
+	if payload.Temperature != nil {
+		params["temperature"] = *payload.Temperature
+	}
+	if payload.ReasoningEffort != "" {
+		params["reasoning_effort"] = payload.ReasoningEffort
 	}
 	encoded, errMarshal := json.Marshal(body)
 	if errMarshal != nil {
@@ -893,8 +934,13 @@ func callUpstream(ctx context.Context, apiKey, model string, payload chatRequest
 			if text == "" {
 				continue
 			}
-			if eventType == "reasoning-delta" {
+			if eventType == "reasoning-delta" || eventType == "reasoning" {
 				result.Reasoning += text
+				if payload.onReasoning != nil {
+					if err := payload.onReasoning(text); err != nil {
+						return result, err
+					}
+				}
 				continue
 			}
 			result.Text += text
@@ -954,9 +1000,6 @@ func callUpstream(ctx context.Context, apiKey, model string, payload chatRequest
 	}
 	if errScan := scanner.Err(); errScan != nil {
 		return result, errScan
-	}
-	if strings.TrimSpace(result.Text) == "" && result.Reasoning != "" {
-		result.Text = result.Reasoning
 	}
 	if len(result.ToolCalls) > 0 {
 		result.FinishReason = "tool_calls"
