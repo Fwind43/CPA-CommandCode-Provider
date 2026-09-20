@@ -11,6 +11,18 @@ This adapter is NOT a complete implementation of the OpenAI Chat Completions API
 - Reasoning deltas are separate from answer text (reasoning_content extension).
 - Function tools and tool result history (existing regression tests).
 - Ordered text and base64 image content mapping.
+- Responses input_image with image_url is normalized to the same image path;
+  missing/non-string URLs and file_id-only inputs fail explicitly.
+
+## Live probe (2026-09-20)
+
+One management api-call attempt with a generated blue-square/OCR image was
+rejected with HTTP 400 `auth token not found` before model inference. The
+management token substitution route did not resolve the selected plugin account.
+No successful live vision inference has been verified; no deployment was made.
+
+## Parameter mapping
+
 - max_tokens, temperature (including zero), and reasoning_effort mapping follows
   the installed official CommandCode CLI 1.54.1 wire format.
 - Explicit token limits are no longer silently capped at 32768.

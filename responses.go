@@ -71,6 +71,17 @@ func normalizeResponses(req pluginapi.ExecutorRequest) (chatRequestPayload, erro
 						switch m["type"] {
 						case "input_text", "output_text":
 							m["type"] = "text"
+						case "input_image":
+							url, ok := m["image_url"].(string)
+							if !ok || url == "" {
+								return p, fmt.Errorf("input_image requires image_url; file_id is unsupported")
+							}
+							image := map[string]any{"url": url}
+							if detail, exists := m["detail"]; exists {
+								image["detail"] = detail
+							}
+							m["type"] = "image_url"
+							m["image_url"] = image
 						default:
 							return p, fmt.Errorf("unsupported Responses content type: %v", m["type"])
 						}
