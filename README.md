@@ -2,6 +2,31 @@
 
 Command Code provider plugin for CLIProxyAPI.
 
+## Disclaimer / 免责声明
+
+This is an independent, unofficial community project and is not affiliated with,
+endorsed by, or sponsored by Command Code or any upstream service provider.
+Use it only with accounts and resources you are authorized to access, and comply
+with applicable laws and each provider's terms of service. Do not use it to
+bypass access controls, usage limits, or billing requirements.
+
+The software is provided "as is", without warranties of availability, security,
+API compatibility, or fitness for a particular purpose. Upstream changes may
+cause failures, and requests may consume paid quota or affect account access.
+You are responsible for protecting credentials, reviewing requests and costs,
+and assessing the risks before deployment. To the extent permitted by applicable
+law, contributors are not liable for losses arising from use of this project.
+This notice does not replace the licenses applicable to this project or its dependencies.
+
+本项目是独立、非官方的社区项目，与 Command Code 或其他上游服务商无隶属、背书或赞助关系。
+请仅使用你有权访问的账号和资源，并遵守适用法律及服务商的服务条款；不得用于绕过访问控制、用量限制或计费要求。
+
+本软件按“现状”提供，不保证可用性、安全性、API 兼容性或特定用途适用性。
+上游变更可能导致功能失效，请求可能消耗付费额度或影响账号访问。
+使用者应自行保护凭据、核查请求与费用，并在部署前评估风险。
+在适用法律允许的范围内，贡献者不对使用本项目造成的损失承担责任。
+本声明不替代本项目及其依赖各自适用的许可证。
+
 ## Features
 
 - Incremental streaming chat completions and stateless OpenAI Responses.
