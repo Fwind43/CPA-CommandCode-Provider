@@ -721,6 +721,7 @@ func apiKeyFromStorage(storage []byte) string {
 }
 
 type chatRequestPayload struct {
+	customTools map[string]bool
 	Tools       []map[string]any `json:"tools"`
 	ToolChoice  any              `json:"tool_choice"`
 	onToolCall  func(map[string]any) error
@@ -955,6 +956,18 @@ func callUpstream(ctx context.Context, apiKey, model string, payload chatRequest
 					return result, err
 				}
 				arguments = string(encoded)
+			}
+			// Only declared custom tools may return verbatim non-JSON input.
+			if payload.customTools[firstString(event, "toolName")] {
+				if text, ok := input.(string); ok {
+					var wrapped struct {
+						Input *string `json:"input"`
+					}
+					if json.Unmarshal([]byte(arguments), &wrapped) != nil || wrapped.Input == nil {
+						encoded, _ := json.Marshal(map[string]string{"input": text})
+						arguments = string(encoded)
+					}
+				}
 			}
 			if !json.Valid([]byte(arguments)) {
 				return result, fmt.Errorf("invalid upstream tool arguments")

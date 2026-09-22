@@ -114,7 +114,28 @@ func normalizeResponses(req pluginapi.ExecutorRequest) (chatRequestPayload, erro
 	raw, _ := json.Marshal(p)
 	req.Payload = raw
 	req.Format = "chat-completions"
-	return normalizeChatRequest(req)
+	normalized, err := normalizeChatRequest(req)
+	if err != nil {
+		return normalized, err
+	}
+	normalized.customTools = make(map[string]bool)
+	var collect func([]map[string]any, string)
+	collect = func(items []map[string]any, ns string) {
+		for _, tool := range items {
+			if tool["type"] == "namespace" {
+				children, _ := tool["tools"].([]any)
+				for _, child := range children {
+					if item, ok := child.(map[string]any); ok {
+						collect([]map[string]any{item}, firstString(tool, "name"))
+					}
+				}
+			} else if tool["type"] == "custom" {
+				normalized.customTools[namespaceToolName(ns, firstString(tool, "name"))] = true
+			}
+		}
+	}
+	collect(tools, "")
+	return normalized, nil
 }
 func responseMessage(id, text, status string) map[string]any {
 	return map[string]any{"id": id, "type": "message", "role": "assistant", "status": status, "content": []any{map[string]any{"type": "output_text", "text": text, "annotations": []any{}}}}
