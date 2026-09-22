@@ -140,31 +140,19 @@ func commandCodeRegistration() registration {
 }
 
 func publicModelID(id string) string {
-	_, short, found := strings.Cut(id, "/")
-	if !found {
-		return id
-	}
-	for _, other := range goPlanModelIDs {
-		_, candidate, hasPrefix := strings.Cut(other, "/")
-		if !hasPrefix {
-			candidate = other
-		}
-		if other != id && candidate == short {
-			return id
-		}
-	}
-	return short
+	return catalogPublicID(id, commandCodeCatalog.snapshot())
 }
 
 func upstreamModelID(id string) string {
-	for _, canonical := range goPlanModelIDs {
-		if id == canonical {
-			return canonical
+	models := commandCodeCatalog.snapshot()
+	for _, m := range models {
+		if id == m.ID {
+			return m.ID
 		}
 	}
-	for _, canonical := range goPlanModelIDs {
-		if id == publicModelID(canonical) {
-			return canonical
+	for _, m := range models {
+		if id == catalogPublicID(m.ID, models) {
+			return m.ID
 		}
 	}
 	return id
@@ -172,20 +160,21 @@ func upstreamModelID(id string) string {
 
 func commandCodeModels() []pluginapi.ModelInfo {
 	now := time.Now().Unix()
-	models := make([]pluginapi.ModelInfo, 0, len(goPlanModelIDs))
-	for _, id := range goPlanModelIDs {
-		id = publicModelID(id)
+	catalog := commandCodeCatalog.snapshot()
+	models := make([]pluginapi.ModelInfo, 0, len(catalog))
+	for _, item := range catalog {
+		id := catalogPublicID(item.ID, catalog)
 		models = append(models, pluginapi.ModelInfo{
 			ID:                  id,
 			Object:              "model",
 			Created:             now,
 			OwnedBy:             providerKey,
 			Type:                "chat",
-			DisplayName:         id,
+			DisplayName:         item.Name,
 			Name:                id,
-			InputTokenLimit:     200000,
+			InputTokenLimit:     item.ContextLength,
 			OutputTokenLimit:    32768,
-			ContextLength:       200000,
+			ContextLength:       item.ContextLength,
 			MaxCompletionTokens: 32768,
 			SupportedParameters: []string{"max_tokens", "temperature", "top_p", "stream", "stop"},
 		})

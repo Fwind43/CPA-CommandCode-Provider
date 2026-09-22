@@ -57,7 +57,26 @@ Back up the installed plugin, replace its shared library in the host plugins dir
 
 The minimal CLIProxyAPI SDK snapshot is included in `third_party/cliproxyapi` with its upstream license. The local module replacement keeps builds independent of later SDK changes.
 
-The generated model list contains 44 models. Unique model IDs omit the first provider segment; ambiguous names retain their full IDs. Existing clients should refresh their model list.
+Models are fetched at runtime from the public official catalog at
+`https://api.commandcode.ai/provider/v1/models` (no account credentials sent).
+The plugin caches successful responses for five minutes, retries failures after
+one minute, and retains the last successful in-memory catalog on failure. On a
+cold start without upstream access it falls back to the bundled model list.
+Timeouts, invalid/empty responses and oversized responses cannot erase the cache.
+Upstream context lengths and display names are preserved; duplicate IDs and
+non-chat endpoints are filtered. Unique model IDs omit the first provider segment;
+ambiguous names retain their full IDs. Full upstream IDs remain accepted.
+
+The public catalog is **not an account entitlement check**: models may appear
+that your Go/other plan cannot use. Authorization is enforced by Command Code.
+Discovery does not make any billable generation/probe requests.
+
+The five-minute TTL is evaluated when the host calls the plugin model callbacks
+(or resolves an execution model); it is not a background push to the host registry.
+After installing the updated plugin, refresh/re-register its models in your CPA
+host and refresh the client's model list. If the host caches registrations without
+calling the plugin again, reload the plugin to pick up newly released models.
+No plugin rebuild is needed for future catalog additions.
 
 ## Quota dashboard and release source
 
