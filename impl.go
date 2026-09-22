@@ -104,7 +104,7 @@ func commandCodeRegistration() registration {
 		SchemaVersion: 1,
 		Metadata: pluginapi.Metadata{
 			Name:             pluginName,
-			Version:          "1.0.5",
+			Version:          "1.0.6",
 			Author:           "custom",
 			GitHubRepository: "https://github.com/router-for-me/CLIProxyAPI",
 			ConfigFields: []pluginapi.ConfigField{
